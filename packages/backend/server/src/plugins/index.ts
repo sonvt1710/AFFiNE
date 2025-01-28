@@ -1,8 +1,12 @@
-import type { AvailablePlugins } from '../fundamentals/config';
-import { PaymentModule } from './payment';
-import { RedisModule } from './redis';
+import './captcha';
+import './copilot';
+import './gcloud';
+import './oauth';
+import './payment';
+import './storage';
 
-export const pluginsMap = new Map<AvailablePlugins, AFFiNEModule>([
-  ['payment', PaymentModule],
-  ['redis', RedisModule],
-]);
+export {
+  enablePlugin,
+  REGISTERED_PLUGINS,
+  ENABLED_PLUGINS as USED_PLUGINS,
+} from './registry';
