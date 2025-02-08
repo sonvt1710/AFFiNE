@@ -1,22 +1,22 @@
-import {
-  Controller,
-  ForbiddenException,
-  Get,
-  Logger,
-  NotFoundException,
-  Param,
-  Res,
-} from '@nestjs/common';
+import { Controller, Get, Logger, Param, Res } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
 import type { Response } from 'express';
 
-import { CallTimer, PrismaService } from '../../fundamentals';
-import { Auth, CurrentUser, Publicable } from '../auth';
-import { DocHistoryManager, DocManager } from '../doc';
+import {
+  AccessDenied,
+  ActionForbidden,
+  BlobNotFound,
+  CallMetric,
+  DocHistoryNotFound,
+  DocNotFound,
+  InvalidHistoryTimestamp,
+} from '../../base';
+import { CurrentUser, Public } from '../auth';
+import { PgWorkspaceDocStorageAdapter } from '../doc';
+import { DocReader } from '../doc/reader';
+import { PermissionService, PublicDocMode } from '../permission';
 import { WorkspaceBlobStorage } from '../storage';
-import { UserType } from '../users';
 import { DocID } from '../utils/doc';
-import { PermissionService, PublicPageMode } from './permission';
-import { Permission } from './types';
 
 @Controller('/api/workspaces')
 export class WorkspacesController {
@@ -24,49 +24,63 @@ export class WorkspacesController {
   constructor(
     private readonly storage: WorkspaceBlobStorage,
     private readonly permission: PermissionService,
-    private readonly docManager: DocManager,
-    private readonly historyManager: DocHistoryManager,
-    private readonly prisma: PrismaService
+    private readonly workspace: PgWorkspaceDocStorageAdapter,
+    private readonly docReader: DocReader,
+    private readonly prisma: PrismaClient
   ) {}
 
   // get workspace blob
   //
   // NOTE: because graphql can't represent a File, so we have to use REST API to get blob
+  @Public()
   @Get('/:id/blobs/:name')
-  @CallTimer('controllers', 'workspace_get_blob')
+  @CallMetric('controllers', 'workspace_get_blob')
   async blob(
+    @CurrentUser() user: CurrentUser | undefined,
     @Param('id') workspaceId: string,
     @Param('name') name: string,
     @Res() res: Response
   ) {
+    // if workspace is public or have any public page, then allow to access
+    // otherwise, check permission
+    if (
+      !(await this.permission.isPublicAccessible(
+        workspaceId,
+        workspaceId,
+        user?.id
+      ))
+    ) {
+      throw new ActionForbidden();
+    }
+
     const { body, metadata } = await this.storage.get(workspaceId, name);
 
     if (!body) {
-      throw new NotFoundException(
-        `Blob not found in workspace ${workspaceId}: ${name}`
-      );
+      throw new BlobNotFound({
+        spaceId: workspaceId,
+        blobId: name,
+      });
     }
 
     // metadata should always exists if body is not null
     if (metadata) {
       res.setHeader('content-type', metadata.contentType);
-      res.setHeader('last-modified', metadata.lastModified.toISOString());
+      res.setHeader('last-modified', metadata.lastModified.toUTCString());
       res.setHeader('content-length', metadata.contentLength);
     } else {
       this.logger.warn(`Blob ${workspaceId}/${name} has no metadata`);
     }
 
-    res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+    res.setHeader('cache-control', 'public, max-age=2592000, immutable');
     body.pipe(res);
   }
 
   // get doc binary
+  @Public()
   @Get('/:id/docs/:guid')
-  @Auth()
-  @Publicable()
-  @CallTimer('controllers', 'workspace_get_doc')
+  @CallMetric('controllers', 'workspace_get_doc')
   async doc(
-    @CurrentUser() user: UserType | undefined,
+    @CurrentUser() user: CurrentUser | undefined,
     @Param('id') ws: string,
     @Param('guid') guid: string,
     @Res() res: Response
@@ -74,46 +88,51 @@ export class WorkspacesController {
     const docId = new DocID(guid, ws);
     if (
       // if a user has the permission
-      !(await this.permission.isAccessible(
+      !(await this.permission.isPublicAccessible(
         docId.workspace,
         docId.guid,
         user?.id
       ))
     ) {
-      throw new ForbiddenException('Permission denied');
+      throw new AccessDenied();
     }
 
-    const update = await this.docManager.getBinary(docId.workspace, docId.guid);
+    const binResponse = await this.docReader.getDoc(
+      docId.workspace,
+      docId.guid
+    );
 
-    if (!update) {
-      throw new NotFoundException('Doc not found');
+    if (!binResponse) {
+      throw new DocNotFound({
+        spaceId: docId.workspace,
+        docId: docId.guid,
+      });
     }
 
     if (!docId.isWorkspace) {
       // fetch the publish page mode for publish page
-      const publishPage = await this.prisma.workspacePage.findUnique({
+      const publishPage = await this.prisma.workspaceDoc.findUnique({
         where: {
-          workspaceId_pageId: {
+          workspaceId_docId: {
             workspaceId: docId.workspace,
-            pageId: docId.guid,
+            docId: docId.guid,
           },
         },
       });
       const publishPageMode =
-        publishPage?.mode === PublicPageMode.Edgeless ? 'edgeless' : 'page';
+        publishPage?.mode === PublicDocMode.Edgeless ? 'edgeless' : 'page';
 
       res.setHeader('publish-mode', publishPageMode);
     }
 
     res.setHeader('content-type', 'application/octet-stream');
-    res.send(update);
+    res.send(binResponse.bin);
   }
 
   @Get('/:id/docs/:guid/histories/:timestamp')
-  @Auth()
-  @CallTimer('controllers', 'workspace_get_history')
+  @CallMetric('controllers', 'workspace_get_history')
   async history(
-    @CurrentUser() user: UserType,
+    @CurrentUser() user: CurrentUser,
     @Param('id') ws: string,
     @Param('guid') guid: string,
     @Param('timestamp') timestamp: string,
@@ -123,28 +142,33 @@ export class WorkspacesController {
     let ts;
     try {
       ts = new Date(timestamp);
-    } catch (e) {
-      throw new Error('Invalid timestamp');
+    } catch {
+      throw new InvalidHistoryTimestamp({ timestamp });
     }
 
     await this.permission.checkPagePermission(
       docId.workspace,
       docId.guid,
-      user.id,
-      Permission.Write
+      'Doc.Read',
+      user.id
     );
 
-    const history = await this.historyManager.get(
+    const history = await this.workspace.getDocHistory(
       docId.workspace,
       docId.guid,
-      ts
+      ts.getTime()
     );
 
     if (history) {
       res.setHeader('content-type', 'application/octet-stream');
-      res.send(history.blob);
+      res.setHeader('cache-control', 'private, max-age=2592000, immutable');
+      res.send(history.bin);
     } else {
-      throw new NotFoundException('Doc history not found');
+      throw new DocHistoryNotFound({
+        spaceId: docId.workspace,
+        docId: guid,
+        timestamp: ts.getTime(),
+      });
     }
   }
 }

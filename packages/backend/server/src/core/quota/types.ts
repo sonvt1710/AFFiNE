@@ -1,71 +1,123 @@
-import { Field, Int, ObjectType } from '@nestjs/graphql';
-import { z } from 'zod';
+import { Field, ObjectType } from '@nestjs/graphql';
+import { SafeIntResolver } from 'graphql-scalars';
 
-import { commonFeatureSchema, FeatureKind } from '../features';
-import { ByteUnit, OneDay, OneKB } from './constant';
-
-/// ======== quota define ========
-
-export enum QuotaType {
-  FreePlanV1 = 'free_plan_v1',
-  ProPlanV1 = 'pro_plan_v1',
-  // only for test, smaller quota
-  RestrictedPlanV1 = 'restricted_plan_v1',
-}
-
-const quotaPlan = z.object({
-  feature: z.enum([
-    QuotaType.FreePlanV1,
-    QuotaType.ProPlanV1,
-    QuotaType.RestrictedPlanV1,
-  ]),
-  configs: z.object({
-    name: z.string(),
-    blobLimit: z.number().positive().int(),
-    storageQuota: z.number().positive().int(),
-    historyPeriod: z.number().positive().int(),
-    memberLimit: z.number().positive().int(),
-  }),
-});
-
-/// ======== schema infer ========
-
-export const QuotaSchema = commonFeatureSchema
-  .extend({
-    type: z.literal(FeatureKind.Quota),
-  })
-  .and(z.discriminatedUnion('feature', [quotaPlan]));
-
-export type Quota = z.infer<typeof QuotaSchema>;
-
-/// ======== query types ========
+import { UserQuota, WorkspaceQuota } from '../../models';
 
 @ObjectType()
-export class QuotaQueryType {
-  @Field(() => Int)
+export class UserQuotaHumanReadableType {
+  @Field()
+  name!: string;
+
+  @Field()
+  blobLimit!: string;
+
+  @Field()
+  storageQuota!: string;
+
+  @Field()
+  usedStorageQuota!: string;
+
+  @Field()
+  historyPeriod!: string;
+
+  @Field()
+  memberLimit!: string;
+
+  @Field()
+  copilotActionLimit!: string;
+}
+
+@ObjectType()
+export class UserQuotaType implements UserQuota {
+  @Field()
+  name!: string;
+
+  @Field(() => SafeIntResolver)
+  blobLimit!: number;
+
+  @Field(() => SafeIntResolver)
   storageQuota!: number;
 
-  @Field(() => Int)
-  usedSize!: number;
+  @Field(() => SafeIntResolver)
+  usedStorageQuota!: number;
 
-  @Field(() => Int)
+  @Field(() => SafeIntResolver)
+  historyPeriod!: number;
+
+  @Field()
+  memberLimit!: number;
+
+  @Field(() => Number, { nullable: true })
+  copilotActionLimit?: number;
+
+  @Field(() => UserQuotaHumanReadableType)
+  humanReadable!: UserQuotaHumanReadableType;
+}
+
+@ObjectType()
+export class UserQuotaUsageType {
+  @Field(() => SafeIntResolver, {
+    name: 'storageQuota',
+    deprecationReason: "use `UserQuotaType['usedStorageQuota']` instead",
+  })
+  storageQuota!: number;
+}
+
+@ObjectType()
+export class WorkspaceQuotaHumanReadableType {
+  @Field()
+  name!: string;
+
+  @Field()
+  blobLimit!: string;
+
+  @Field()
+  storageQuota!: string;
+
+  @Field()
+  storageQuotaUsed!: string;
+
+  @Field()
+  historyPeriod!: string;
+
+  @Field()
+  memberLimit!: string;
+
+  @Field()
+  memberCount!: string;
+}
+
+@ObjectType()
+export class WorkspaceQuotaType implements Partial<WorkspaceQuota> {
+  @Field()
+  name!: string;
+
+  @Field(() => SafeIntResolver)
   blobLimit!: number;
-}
 
-/// ======== utils ========
+  @Field(() => SafeIntResolver)
+  storageQuota!: number;
 
-export function formatSize(bytes: number, decimals: number = 2): string {
-  if (bytes === 0) return '0 B';
+  @Field(() => SafeIntResolver)
+  usedStorageQuota!: number;
 
-  const dm = decimals < 0 ? 0 : decimals;
+  @Field(() => SafeIntResolver)
+  historyPeriod!: number;
 
-  const i = Math.floor(Math.log(bytes) / Math.log(OneKB));
+  @Field()
+  memberLimit!: number;
 
-  return (
-    parseFloat((bytes / Math.pow(OneKB, i)).toFixed(dm)) + ' ' + ByteUnit[i]
-  );
-}
+  @Field()
+  memberCount!: number;
 
-export function formatDate(ms: number): string {
-  return `${(ms / OneDay).toFixed(0)} days`;
+  @Field()
+  humanReadable!: WorkspaceQuotaHumanReadableType;
+
+  /**
+   * @deprecated
+   */
+  @Field(() => SafeIntResolver, {
+    deprecationReason: 'use `usedStorageQuota` instead',
+  })
+  usedSize!: number;
 }
