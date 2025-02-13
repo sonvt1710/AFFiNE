@@ -1,53 +1,53 @@
-import { InlineEdit, type InlineEditProps } from '@affine/component';
-import {
-  useBlockSuitePageMeta,
-  usePageMetaHelper,
-} from '@affine/core/hooks/use-block-suite-page-meta';
-import type { BlockSuiteWorkspace } from '@affine/core/shared';
+import type { InlineEditProps } from '@affine/component';
+import { InlineEdit } from '@affine/component';
+import { useAsyncCallback } from '@affine/core/components/hooks/affine-async-hooks';
+import { DocService, DocsService } from '@affine/core/modules/doc';
+import { GuardService } from '@affine/core/modules/permissions';
+import { WorkspaceService } from '@affine/core/modules/workspace';
+import { track } from '@affine/track';
+import { useLiveData, useService } from '@toeverything/infra';
+import clsx from 'clsx';
 import type { HTMLAttributes } from 'react';
-import { useCallback } from 'react';
 
 import * as styles from './style.css';
 
 export interface BlockSuiteHeaderTitleProps {
-  blockSuiteWorkspace: BlockSuiteWorkspace;
-  pageId: string;
   /** if set, title cannot be edited */
-  isPublic?: boolean;
   inputHandleRef?: InlineEditProps['handleRef'];
+  className?: string;
 }
 
 const inputAttrs = {
   'data-testid': 'title-content',
 } as HTMLAttributes<HTMLInputElement>;
 export const BlocksuiteHeaderTitle = (props: BlockSuiteHeaderTitleProps) => {
-  const {
-    blockSuiteWorkspace: workspace,
-    pageId,
-    isPublic,
-    inputHandleRef,
-  } = props;
-  const currentPage = workspace.getPage(pageId);
-  const pageMeta = useBlockSuitePageMeta(workspace).find(
-    meta => meta.id === currentPage?.id
-  );
-  const title = pageMeta?.title;
-  const { setPageTitle } = usePageMetaHelper(workspace);
+  const { inputHandleRef } = props;
+  const workspaceService = useService(WorkspaceService);
+  const isSharedMode = workspaceService.workspace.openOptions.isSharedMode;
+  const docsService = useService(DocsService);
+  const guardService = useService(GuardService);
+  const docService = useService(DocService);
+  const docTitle = useLiveData(docService.doc.record.title$);
 
-  const onChange = useCallback(
-    (v: string) => {
-      setPageTitle(currentPage?.id || '', v);
+  const onChange = useAsyncCallback(
+    async (v: string) => {
+      await docsService.changeDocTitle(docService.doc.id, v);
+      track.$.header.actions.renameDoc();
     },
-    [currentPage?.id, setPageTitle]
+    [docService.doc.id, docsService]
+  );
+
+  const canEdit = useLiveData(
+    guardService.can$('Doc_Update', docService.doc.id)
   );
 
   return (
     <InlineEdit
-      className={styles.title}
-      autoSelect
-      value={title}
+      className={clsx(styles.title, props.className)}
+      value={docTitle}
       onChange={onChange}
-      editable={!isPublic}
+      editable={!isSharedMode && canEdit}
+      exitible={true}
       placeholder="Untitled"
       data-testid="title-edit-button"
       handleRef={inputHandleRef}

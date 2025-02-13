@@ -1,147 +1,80 @@
-import { globalStyle, keyframes, style } from '@vanilla-extract/css';
+import { cssVar } from '@toeverything/theme';
+import { globalStyle, style } from '@vanilla-extract/css';
+export const authContainer = style({
+  display: 'flex',
+  flexDirection: 'column',
+  height: '100%',
+  width: '100%',
+  minHeight: '422px',
+});
 
-export const modalHeaderWrapper = style({});
-
-globalStyle(`${modalHeaderWrapper} .logo`, {
-  fontSize: 'var(--affine-font-h-3)',
+export const authHeaderWrapper = style({
+  marginBottom: '20px',
+});
+globalStyle(`${authHeaderWrapper} .logo`, {
+  fontSize: cssVar('fontH3'),
   fontWeight: 600,
-  color: 'var(--affine-blue)',
+  color: cssVar('black'),
   marginRight: '6px',
   verticalAlign: 'middle',
 });
 
-globalStyle(`${modalHeaderWrapper} > p:first-of-type`, {
-  fontSize: 'var(--affine-font-h-5)',
+globalStyle(`${authHeaderWrapper} > p:first-of-type`, {
+  fontSize: cssVar('fontH5'),
   fontWeight: 600,
   marginBottom: '4px',
   lineHeight: '28px',
   display: 'flex',
   alignItems: 'center',
 });
-globalStyle(`${modalHeaderWrapper} > p:last-of-type`, {
-  fontSize: 'var(--affine-font-h-4)',
+globalStyle(`${authHeaderWrapper} > p:last-of-type`, {
+  fontSize: cssVar('fontH4'),
   fontWeight: 600,
   lineHeight: '28px',
 });
 
+export const authContent = style({
+  fontSize: cssVar('fontBase'),
+  lineHeight: cssVar('fontH3'),
+  flexGrow: 1,
+});
+
+globalStyle(`${authContent} > *:not(:last-child)`, {
+  marginBottom: '20px',
+});
+
 export const authInputWrapper = style({
-  paddingBottom: '30px',
   position: 'relative',
   selectors: {
-    '&.without-hint': {
-      paddingBottom: '20px',
+    '&.with-hint': {
+      marginBottom: '8px',
     },
   },
+});
+
+export const authFooter = style({});
+
+globalStyle(`${authFooter} > *:not(:last-child)`, {
+  marginBottom: '20px',
 });
 
 globalStyle(`${authInputWrapper} label`, {
   display: 'block',
-  color: 'var(--light-text-color-text-secondary-color, #8E8D91)',
+  color: cssVar('textSecondaryColor'),
   marginBottom: '4px',
-  fontSize: 'var(--affine-font-sm)',
+  fontSize: cssVar('fontSm'),
   fontWeight: 600,
   lineHeight: '22px',
 });
-export const formHint = style({
-  fontSize: 'var(--affine-font-sm)',
-  position: 'absolute',
-  bottom: '4px',
-  left: 0,
-  lineHeight: '22px',
-  selectors: {
-    '&.error': {
-      color: 'var(--affine-error-color)',
-    },
-    '&.warning': {
-      color: 'var(--affine-warning-color)',
-    },
-  },
-});
-const rotate = keyframes({
-  '0%': { transform: 'rotate(0deg)' },
-  '50%': { transform: 'rotate(180deg)' },
-  '100%': { transform: 'rotate(360deg)' },
-});
-export const loading = style({
-  width: '15px',
-  height: '15px',
-  position: 'relative',
-  borderRadius: '50%',
-  overflow: 'hidden',
-  backgroundColor: 'var(--affine-border-color)',
-  selectors: {
-    '&::after': {
-      content: '""',
-      width: '12px',
-      height: '12px',
-      position: 'absolute',
-      left: '0',
-      right: '0',
-      top: '0',
-      bottom: '0',
-      margin: 'auto',
-      backgroundColor: '#fff',
-      zIndex: 2,
-      borderRadius: '50%',
-    },
-    '&::before': {
-      content: '""',
-      width: '20px',
-      height: '20px',
-      backgroundColor: 'var(--affine-blue)',
-      position: 'absolute',
-      left: '50%',
-      bottom: '50%',
-      zIndex: '1',
-      transformOrigin: 'left bottom',
-      animation: `${rotate} 1.5s infinite linear`,
-    },
-  },
+
+export const authInputError = style({
+  color: cssVar('errorColor'),
+  fontSize: cssVar('fontXs'),
+  lineHeight: '20px',
 });
 
-export const authContent = style({
-  fontSize: 'var(--affine-font-base)',
-  lineHeight: 'var(--affine-font-h-3)',
-  marginTop: '30px',
-});
 globalStyle(`${authContent} a`, {
-  color: 'var(--affine-link-color)',
-});
-
-export const authCodeContainer = style({
-  paddingBottom: '40px',
-  position: 'relative',
-});
-export const authCodeWrapper = style({
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-});
-
-export const authCodeErrorMessage = style({
-  color: 'var(--affine-error-color)',
-  fontSize: 'var(--affine-font-sm)',
-  textAlign: 'center',
-  lineHeight: '1.5',
-  position: 'absolute',
-  left: 0,
-  right: 0,
-  bottom: 5,
-  margin: 'auto',
-});
-
-export const resendButtonWrapper = style({
-  height: 32,
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  marginTop: 30,
-});
-
-globalStyle(`${resendButtonWrapper} .resend-code-hint`, {
-  fontWeight: 600,
-  fontSize: 'var(--affine-font-sm)',
-  marginRight: 8,
+  color: cssVar('linkColor'),
 });
 
 export const authPageContainer = style({
@@ -150,7 +83,7 @@ export const authPageContainer = style({
   display: 'flex',
   justifyContent: 'center',
   alignItems: 'center',
-  fontSize: 'var(--affine-font-base)',
+  fontSize: cssVar('fontBase'),
   '@media': {
     'screen and (max-width: 1024px)': {
       flexDirection: 'column',
@@ -162,39 +95,72 @@ export const authPageContainer = style({
 globalStyle(`${authPageContainer} .wrapper`, {
   display: 'flex',
   alignItems: 'center',
+  width: '100%',
+  justifyContent: 'center',
+  overflow: 'hidden',
   '@media': {
     'screen and (max-width: 1024px)': {
       flexDirection: 'column',
+      justifyContent: 'flex-start',
     },
   },
 });
 globalStyle(`${authPageContainer} .content`, {
-  maxWidth: '700px',
+  maxWidth: '810px',
+  '@media': {
+    'screen and (min-width: 1024px)': {
+      marginLeft: '200px',
+      minWidth: '500px',
+      marginRight: '60px',
+      flexGrow: 1,
+      flexShrink: 0,
+      flexBasis: 0,
+    },
+    'screen and (max-width: 1024px)': {
+      maxWidth: '600px',
+      width: '100%',
+      margin: 'auto',
+    },
+  },
 });
-
 globalStyle(`${authPageContainer} .title`, {
-  fontSize: 'var(--affine-font-title)',
+  fontSize: cssVar('fontTitle'),
   fontWeight: 600,
   marginBottom: '28px',
 });
-
 globalStyle(`${authPageContainer} .subtitle`, {
   marginBottom: '28px',
 });
 globalStyle(`${authPageContainer} a`, {
-  color: 'var(--affine-link-color)',
+  color: cssVar('linkColor'),
 });
-
 export const signInPageContainer = style({
-  width: '400px',
-  margin: '205px auto 0',
+  height: '100vh',
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  alignItems: 'center',
 });
-
 export const input = style({
   width: '330px',
+  position: 'relative',
   '@media': {
     'screen and (max-width: 520px)': {
       width: '100%',
     },
   },
+});
+
+export const hideInSmallScreen = style({
+  '@media': {
+    'screen and (max-width: 1024px)': {
+      display: 'none',
+    },
+  },
+});
+
+export const illustration = style({
+  flexShrink: 0,
+  width: '670px',
 });

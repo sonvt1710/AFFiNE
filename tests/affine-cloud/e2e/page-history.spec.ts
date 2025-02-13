@@ -11,7 +11,8 @@ import {
   waitForEditorLoad,
 } from '@affine-test/kit/utils/page-logic';
 import { createLocalWorkspace } from '@affine-test/kit/utils/workspace';
-import { expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 let user: {
   id: string;
@@ -22,7 +23,7 @@ let user: {
 
 test.beforeEach(async ({ page }) => {
   user = await createRandomUser();
-  await loginUser(page, user.email);
+  await loginUser(page, user);
 });
 
 test.afterEach(async () => {
@@ -57,7 +58,7 @@ test('newly created page shows empty history', async ({ page }) => {
 const pushCurrentPageUpdates = async (page: Page) => {
   const [workspaceId, guid, updates, state] = await page.evaluate(() => {
     // @ts-expect-error
-    const Y = window.currentWorkspace.blockSuiteWorkspace.constructor.Y;
+    const Y = window.Y;
     // @ts-expect-error
     const spaceDoc = window.currentEditor.page.spaceDoc;
     // @ts-expect-error
@@ -98,6 +99,9 @@ test('can restore page to a history version', async ({ page }) => {
   await pushCurrentPageUpdates(page);
 
   const title = getBlockSuiteEditorTitle(page);
+
+  await title.focus();
+
   await title.pressSequentially('TEST TITLE', {
     delay: 50,
   });
@@ -105,7 +109,13 @@ test('can restore page to a history version', async ({ page }) => {
   // write something and push to history
   await pushCurrentPageUpdates(page);
 
-  await title.fill('New Title');
+  await title.selectText();
+
+  await title.press('Backspace');
+
+  await title.pressSequentially('New Title', {
+    delay: 50,
+  });
 
   // click the history button
   await page.getByTestId('header-dropDownButton').click();
@@ -143,4 +153,33 @@ test('can restore page to a history version', async ({ page }) => {
 
   // title should be restored to 'TEST TITLE'
   await expect(title).toContainText('TEST TITLE');
+});
+
+test('empty history doc should not show starter bar', async ({ page }) => {
+  await page.reload();
+  await waitForEditorLoad(page);
+  await createLocalWorkspace({ name: 'test' }, page);
+  await enableCloudWorkspace(page);
+
+  await pushCurrentPageUpdates(page);
+
+  const title = getBlockSuiteEditorTitle(page);
+  await title.focus();
+  await title.pressSequentially('TEST TITLE', {
+    delay: 50,
+  });
+  // write something and push to history
+  await pushCurrentPageUpdates(page);
+
+  // click the history button
+  await page.getByTestId('header-dropDownButton').click();
+  await page.getByTestId('editor-option-menu-history').click();
+
+  const modal = page.getByTestId('page-history-modal');
+
+  // expect history modal shown up
+  await expect(modal).toBeVisible();
+
+  const aiBadge = modal.getByTestId('start-with-ai-badge');
+  await expect(aiBadge).not.toBeVisible();
 });

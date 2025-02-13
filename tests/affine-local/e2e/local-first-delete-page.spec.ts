@@ -7,6 +7,7 @@ import {
   getPageOperationButton,
   waitForEditorLoad,
 } from '@affine-test/kit/utils/page-logic';
+import { getCurrentDocIdFromUrl } from '@affine-test/kit/utils/url';
 import { expect } from '@playwright/test';
 
 test('page delete -> refresh page -> it should be disappear', async ({
@@ -18,7 +19,7 @@ test('page delete -> refresh page -> it should be disappear', async ({
   await clickNewPageButton(page);
   await getBlockSuiteEditorTitle(page).click();
   await getBlockSuiteEditorTitle(page).fill('this is a new page delete');
-  const newPageId = page.url().split('/').reverse()[0];
+  const newPageId = getCurrentDocIdFromUrl(page);
   await page.getByTestId('all-pages').click();
   const cell = page.getByRole('cell', {
     name: 'this is a new page delete',
@@ -34,10 +35,8 @@ test('page delete -> refresh page -> it should be disappear', async ({
   await getPageItem(page, newPageId).getByTestId('delete-page-button').click();
   await page.getByText('Delete permanently?').dblclick();
   await page.getByRole('button', { name: 'Delete' }).click();
-  await page.reload();
   expect(page.getByText("There's no page here yet")).not.toBeUndefined();
   await page.getByTestId('all-pages').click();
-  await page.reload();
 
   const currentWorkspace = await workspace.current();
 
@@ -48,12 +47,13 @@ test('page delete -> create new page -> refresh page -> new page should be appea
   page,
   workspace,
 }) => {
+  test.slow();
   await openHomePage(page);
   await waitForEditorLoad(page);
   await clickNewPageButton(page);
   await getBlockSuiteEditorTitle(page).click();
   await getBlockSuiteEditorTitle(page).fill('this is a new page delete');
-  const newPageDeleteId = page.url().split('/').reverse()[0];
+  const newPageDeleteId = getCurrentDocIdFromUrl(page);
   await page.getByTestId('all-pages').click();
   const cellDelete = page.getByRole('cell', {
     name: 'this is a new page delete',
@@ -71,23 +71,21 @@ test('page delete -> create new page -> refresh page -> new page should be appea
     .click();
   await page.getByText('Delete permanently?').dblclick();
   await page.getByRole('button', { name: 'Delete' }).click();
-  await page.reload();
-  expect(page.getByText("There's no page here yet")).not.toBeUndefined();
+  expect(page.getByText('Deleted docs will appear here')).not.toBeUndefined();
   await page.getByTestId('all-pages').click();
 
   await clickNewPageButton(page);
   await getBlockSuiteEditorTitle(page).click();
   await getBlockSuiteEditorTitle(page).fill('this is a new page1');
   await page.waitForTimeout(1000);
-  const newPageId1 = page.url().split('/').reverse()[0];
+  const newPageId1 = getCurrentDocIdFromUrl(page);
   await page.getByTestId('all-pages').click();
   await clickNewPageButton(page);
   await getBlockSuiteEditorTitle(page).click();
   await getBlockSuiteEditorTitle(page).fill('this is a new page2');
   await page.waitForTimeout(1000);
-  const newPageId2 = page.url().split('/').reverse()[0];
+  const newPageId2 = getCurrentDocIdFromUrl(page);
   await page.getByTestId('all-pages').click();
-  await page.reload();
   await getPageItem(page, newPageId1).click();
   await page.getByTestId('all-pages').click();
   await getPageItem(page, newPageId2).click();
@@ -108,13 +106,13 @@ test('delete multiple pages -> create multiple pages -> refresh', async ({
   await clickNewPageButton(page);
   await getBlockSuiteEditorTitle(page).click();
   await getBlockSuiteEditorTitle(page).fill('this is a new page1');
-  const newPageId1 = page.url().split('/').reverse()[0];
+  const newPageId1 = getCurrentDocIdFromUrl(page);
   await page.getByTestId('all-pages').click();
   // create 2nd page
   await clickNewPageButton(page);
   await getBlockSuiteEditorTitle(page).click();
   await getBlockSuiteEditorTitle(page).fill('this is a new page2');
-  const newPageId2 = page.url().split('/').reverse()[0];
+  const newPageId2 = getCurrentDocIdFromUrl(page);
   await page.getByTestId('all-pages').click();
 
   // 1st cell to be deleted
@@ -150,8 +148,6 @@ test('delete multiple pages -> create multiple pages -> refresh', async ({
   await page.getByText('Delete permanently?').dblclick();
   await page.getByRole('button', { name: 'Delete' }).click();
   await page.getByTestId('all-pages').click();
-
-  await page.reload();
 
   const currentWorkspace = await workspace.current();
 

@@ -32,14 +32,19 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+          - name: AFFINE_PRIVATE_KEY
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .Values.global.secret.secretName }}"
+                key: key
           - name: NODE_ENV
             value: "{{ .Values.env }}"
           - name: NO_COLOR
             value: "1"
+          - name: DEPLOYMENT_TYPE
+            value: "affine"
           - name: SERVER_FLAVOR
             value: "sync"
-          - name: NEXTAUTH_URL
-            value: "{{ .Values.global.ingress.host }}"
           - name: AFFINE_ENV
             value: "{{ .Release.Namespace }}"
           - name: DATABASE_PASSWORD
@@ -68,6 +73,8 @@ spec:
             value: "{{ .Values.service.port }}"
           - name: AFFINE_SERVER_HOST
             value: "{{ .Values.app.host }}"
+          - name: DOC_SERVICE_ENDPOINT
+            value: "http://{{ .Values.global.docService.name }}:{{ .Values.global.docService.port }}"
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

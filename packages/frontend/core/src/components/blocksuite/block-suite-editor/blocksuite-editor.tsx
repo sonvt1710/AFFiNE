@@ -1,223 +1,157 @@
+import { useRefEffect } from '@affine/component';
 import { EditorLoading } from '@affine/component/page-detail-skeleton';
-import { usePageMetaHelper } from '@affine/core/hooks/use-block-suite-page-meta';
-import { useJournalHelper } from '@affine/core/hooks/use-journal';
-import { useAFFiNEI18N } from '@affine/i18n/hooks';
-import { assertExists } from '@blocksuite/global/utils';
-import { LinkedPageIcon, TodayIcon } from '@blocksuite/icons';
-import type { AffineEditorContainer } from '@blocksuite/presets';
-import type { Page } from '@blocksuite/store';
-import { use } from 'foxact/use';
-import type { CSSProperties, ReactElement } from 'react';
+import { ServerService } from '@affine/core/modules/cloud';
 import {
-  forwardRef,
-  memo,
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react';
-import { type Map as YMap } from 'yjs';
+  customImageProxyMiddleware,
+  type DocMode,
+  ImageProxyService,
+  LinkPreviewerService,
+} from '@blocksuite/affine/blocks';
+import { DisposableGroup } from '@blocksuite/affine/global/utils';
+import type { AffineEditorContainer } from '@blocksuite/affine/presets';
+import type { Store } from '@blocksuite/affine/store';
+import { useService } from '@toeverything/infra';
+import type { CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 
+import type { DefaultOpenProperty } from '../../doc-properties';
 import { BlocksuiteEditorContainer } from './blocksuite-editor-container';
-import type { InlineRenderers } from './specs';
-import * as styles from './styles.css';
-
-export type ErrorBoundaryProps = {
-  onReset?: () => void;
-};
+import { NoPageRootError } from './no-page-error';
 
 export type EditorProps = {
-  page: Page;
-  mode: 'page' | 'edgeless';
-  defaultSelectedBlockId?: string;
-  // on Editor instance instantiated
-  onLoadEditor?: (editor: AffineEditorContainer) => () => void;
+  page: Store;
+  mode: DocMode;
+  shared?: boolean;
+  readonly?: boolean;
+  defaultOpenProperty?: DefaultOpenProperty;
+  // on Editor ready
+  onEditorReady?: (editor: AffineEditorContainer) => (() => void) | void;
   style?: CSSProperties;
   className?: string;
 };
 
-/**
- * TODO: Defined async cache to support suspense, instead of reflect symbol to provider persistent error cache.
- */
-const PAGE_LOAD_KEY = Symbol('PAGE_LOAD');
-const PAGE_ROOT_KEY = Symbol('PAGE_ROOT');
-
-function usePageRoot(page: Page) {
-  let load$ = Reflect.get(page, PAGE_LOAD_KEY);
-  if (!load$) {
-    load$ = page.load();
-    Reflect.set(page, PAGE_LOAD_KEY, load$);
-  }
-  use(load$);
-
-  if (!page.root) {
-    let root$: Promise<void> | undefined = Reflect.get(page, PAGE_ROOT_KEY);
-    if (!root$) {
-      root$ = new Promise((resolve, reject) => {
-        const disposable = page.slots.rootAdded.once(() => {
-          resolve();
-        });
-        window.setTimeout(() => {
-          disposable.dispose();
-          reject(new NoPageRootError(page));
-        }, 20 * 1000);
+const BlockSuiteEditorImpl = ({
+  mode,
+  page,
+  className,
+  shared,
+  readonly,
+  style,
+  onEditorReady,
+  defaultOpenProperty,
+}: EditorProps) => {
+  useEffect(() => {
+    const disposable = page.slots.blockUpdated.once(() => {
+      page.workspace.meta.setDocMeta(page.id, {
+        updatedDate: Date.now(),
       });
-      Reflect.set(page, PAGE_ROOT_KEY, root$);
-    }
-    use(root$);
-  }
-
-  return page.root;
-}
-
-interface PageReferenceProps {
-  reference: HTMLElementTagNameMap['affine-reference'];
-  pageMetaHelper: ReturnType<typeof usePageMetaHelper>;
-  journalHelper: ReturnType<typeof useJournalHelper>;
-  t: ReturnType<typeof useAFFiNEI18N>;
-}
-
-// TODO: this is a placeholder proof-of-concept implementation
-function customPageReference({
-  reference,
-  pageMetaHelper,
-  journalHelper,
-  t,
-}: PageReferenceProps) {
-  const { isPageJournal, getLocalizedJournalDateString } = journalHelper;
-  assertExists(
-    reference.delta.attributes?.reference?.pageId,
-    'pageId should exist for page reference'
-  );
-  const pageId = reference.delta.attributes.reference.pageId;
-  const referencedPage = pageMetaHelper.getPageMeta(pageId);
-  let title =
-    referencedPage?.title ?? t['com.affine.editor.reference-not-found']();
-  let icon = <LinkedPageIcon className={styles.pageReferenceIcon} />;
-  const isJournal = isPageJournal(pageId);
-  const localizedJournalDate = getLocalizedJournalDateString(pageId);
-  if (isJournal && localizedJournalDate) {
-    title = localizedJournalDate;
-    icon = <TodayIcon className={styles.pageReferenceIcon} />;
-  }
-  return (
-    <>
-      {icon}
-      <span className="affine-reference-title">{title}</span>
-    </>
-  );
-}
-
-// we cannot pass components to lit renderers, but give them the rendered elements
-const customRenderersFactory: (
-  opts: Omit<PageReferenceProps, 'reference'>
-) => InlineRenderers = opts => ({
-  pageReference(reference) {
-    return customPageReference({
-      ...opts,
-      reference,
     });
-  },
-});
+    return () => {
+      disposable.dispose();
+    };
+  }, [page]);
 
-/**
- * TODO: Define error to unexpected state together in the future.
- */
-export class NoPageRootError extends Error {
-  constructor(public page: Page) {
-    super('Page root not found when render editor!');
+  const server = useService(ServerService).server;
 
-    // Log info to let sentry collect more message
-    const hasExpectSpace = Array.from(page.rootDoc.spaces.values()).some(
-      doc => page.spaceDoc.guid === doc.guid
-    );
-    const blocks = page.spaceDoc.getMap('blocks') as YMap<YMap<any>>;
-    const havePageBlock = Array.from(blocks.values()).some(
-      block => block.get('sys:flavour') === 'affine:page'
-    );
-    console.info(
-      'NoPageRootError current data: %s',
-      JSON.stringify({
-        expectPageId: page.id,
-        expectGuid: page.spaceDoc.guid,
-        hasExpectSpace,
-        blockSize: blocks.size,
-        havePageBlock,
-      })
-    );
-  }
-}
+  const editorRef = useRefEffect(
+    (editor: AffineEditorContainer) => {
+      globalThis.currentEditor = editor;
+      let canceled = false;
+      const disposableGroup = new DisposableGroup();
 
-const BlockSuiteEditorImpl = forwardRef<AffineEditorContainer, EditorProps>(
-  function BlockSuiteEditorImpl(
-    { mode, page, className, defaultSelectedBlockId, onLoadEditor, style },
-    ref
-  ) {
-    usePageRoot(page);
-    assertExists(page, 'page should not be null');
-    const editorDisposeRef = useRef<() => void>(() => {});
-    const editorRef = useRef<AffineEditorContainer | null>(null);
+      if (onEditorReady) {
+        // Invoke onLoad once the editor has been mounted to the DOM.
+        editor.updateComplete
+          .then(() => {
+            if (canceled) {
+              return;
+            }
+            // host should be ready
 
-    const onRefChange = useCallback(
-      (editor: AffineEditorContainer | null) => {
-        editorRef.current = editor;
-        if (ref) {
-          if (typeof ref === 'function') {
-            ref(editor);
-          } else {
-            ref.current = editor;
-          }
-        }
-        if (editor && onLoadEditor) {
-          editorDisposeRef.current = onLoadEditor(editor);
-        }
-      },
-      [onLoadEditor, ref]
-    );
+            // provide image proxy endpoint to blocksuite
+            const imageProxyUrl = new URL(
+              BUILD_CONFIG.imageProxyUrl,
+              server.baseUrl
+            ).toString();
+            const linkPreviewUrl = new URL(
+              BUILD_CONFIG.linkPreviewUrl,
+              server.baseUrl
+            ).toString();
 
-    useEffect(() => {
+            editor.host?.std.clipboard.use(
+              customImageProxyMiddleware(imageProxyUrl)
+            );
+
+            page.get(LinkPreviewerService).setEndpoint(linkPreviewUrl);
+
+            page.get(ImageProxyService).setImageProxyURL(imageProxyUrl);
+
+            return editor.host?.updateComplete;
+          })
+          .then(() => {
+            if (canceled) {
+              return;
+            }
+            const dispose = onEditorReady(editor);
+            if (dispose) {
+              disposableGroup.add(dispose);
+            }
+          })
+          .catch(console.error);
+      }
+
       return () => {
-        editorDisposeRef.current();
+        canceled = true;
+        disposableGroup.dispose();
       };
-    }, []);
+    },
+    [onEditorReady, page, server]
+  );
 
-    const pageMetaHelper = usePageMetaHelper(page.workspace);
-    const journalHelper = useJournalHelper(page.workspace);
-    const t = useAFFiNEI18N();
+  return (
+    <BlocksuiteEditorContainer
+      mode={mode}
+      page={page}
+      shared={shared}
+      readonly={readonly}
+      defaultOpenProperty={defaultOpenProperty}
+      ref={editorRef}
+      className={className}
+      style={style}
+    />
+  );
+};
 
-    const customRenderers = useMemo(() => {
-      return customRenderersFactory({
-        pageMetaHelper,
-        journalHelper,
-        t,
-      });
-    }, [journalHelper, pageMetaHelper, t]);
+export const BlockSuiteEditor = (props: EditorProps) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-    return (
-      <BlocksuiteEditorContainer
-        mode={mode}
-        page={page}
-        ref={onRefChange}
-        className={className}
-        style={style}
-        customRenderers={customRenderers}
-        defaultSelectedBlockId={defaultSelectedBlockId}
-      />
-    );
-  }
-);
-
-export const BlockSuiteEditor = memo(
-  forwardRef<AffineEditorContainer, EditorProps>(
-    function BlockSuiteEditor(props, ref): ReactElement {
-      return (
-        <Suspense fallback={<EditorLoading />}>
-          <BlockSuiteEditorImpl key={props.page.id} ref={ref} {...props} />
-        </Suspense>
-      );
+  useEffect(() => {
+    if (props.page.root) {
+      setIsLoading(false);
+      return;
     }
-  )
-);
+    const timer = setTimeout(() => {
+      disposable.dispose();
+      setError(new NoPageRootError(props.page));
+    }, 20 * 1000);
+    const disposable = props.page.slots.rootAdded.once(() => {
+      setIsLoading(false);
+      clearTimeout(timer);
+    });
+    return () => {
+      disposable.dispose();
+      clearTimeout(timer);
+    };
+  }, [props.page]);
 
-BlockSuiteEditor.displayName = 'BlockSuiteEditor';
+  if (error) {
+    throw error;
+  }
+
+  return isLoading ? (
+    <EditorLoading />
+  ) : (
+    <BlockSuiteEditorImpl key={props.page.id} {...props} />
+  );
+};

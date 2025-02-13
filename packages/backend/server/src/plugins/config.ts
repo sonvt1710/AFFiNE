@@ -1,21 +1,30 @@
-import { PaymentConfig } from './payment';
-import { RedisOptions } from './redis';
+import { ModuleStartupConfigDescriptions } from '../base/config/types';
 
-declare module '../fundamentals/config' {
-  interface PluginsConfig {
-    readonly payment: PaymentConfig;
-    readonly redis: RedisOptions;
+export interface PluginsConfig {}
+export type AvailablePlugins = keyof PluginsConfig;
+
+declare module '../base/config' {
+  interface AppConfig {
+    plugins: PluginsConfig;
   }
 
-  export type AvailablePlugins = keyof PluginsConfig;
-
-  interface AFFiNEConfig {
-    readonly plugins: {
-      enabled: AvailablePlugins[];
+  interface AppPluginsConfig {
+    use<Plugin extends AvailablePlugins>(
+      plugin: Plugin,
+      config?: DeepPartial<
+        ModuleStartupConfigDescriptions<PluginsConfig[Plugin]>
+      >
+    ): void;
+    plugins: {
+      /**
+       * @deprecated use `AFFiNE.use` instead
+       */
       use<Plugin extends AvailablePlugins>(
         plugin: Plugin,
-        config?: DeepPartial<PluginsConfig[Plugin]>
+        config?: DeepPartial<
+          ModuleStartupConfigDescriptions<PluginsConfig[Plugin]>
+        >
       ): void;
-    } & Partial<PluginsConfig>;
+    };
   }
 }
