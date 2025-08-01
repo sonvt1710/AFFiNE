@@ -121,9 +121,9 @@ framework.impl(VirtualKeyboardProvider, {
     };
 
     Promise.all([
-      Keyboard.addListener('keyboardDidShow', info => {
+      Keyboard.addListener('keyboardWillShow', info => {
         callback({
-          visible: true,
+          visible: info.keyboardHeight !== 0,
           height: info.keyboardHeight,
         });
       }),

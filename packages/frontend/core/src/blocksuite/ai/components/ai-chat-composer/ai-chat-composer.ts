@@ -6,16 +6,20 @@ import type {
 } from '@affine/core/modules/ai-button';
 import type { WorkspaceDialogService } from '@affine/core/modules/dialogs';
 import type {
-  ContextEmbedStatus,
   ContextWorkspaceEmbeddingStatus,
   CopilotChatHistoryFragment,
   CopilotContextDoc,
   CopilotContextFile,
 } from '@affine/graphql';
+import { ContextEmbedStatus } from '@affine/graphql';
 import { SignalWatcher, WithDisposable } from '@blocksuite/affine/global/lit';
 import type { EditorHost } from '@blocksuite/affine/std';
 import { ShadowlessElement } from '@blocksuite/affine/std';
-import type { NotificationService } from '@blocksuite/affine-shared/services';
+import { uuidv4 } from '@blocksuite/affine/store';
+import type {
+  FeatureFlagService,
+  NotificationService,
+} from '@blocksuite/affine-shared/services';
 import { css, html, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
 
@@ -27,6 +31,7 @@ import type {
   DocChip,
   DocDisplayConfig,
   FileChip,
+  SelectedContextChip,
   TagChip,
 } from '../ai-chat-chips';
 import {
@@ -34,6 +39,7 @@ import {
   isCollectionChip,
   isDocChip,
   isFileChip,
+  isSelectedContextChip,
   isTagChip,
   omitChip,
 } from '../ai-chat-chips';
@@ -125,6 +131,9 @@ export class AIChatComposer extends SignalWatcher(
   @property({ attribute: false })
   accessor aiToolsConfigService!: AIToolsConfigService;
 
+  @property({ attribute: false })
+  accessor affineFeatureFlagService!: FeatureFlagService;
+
   @state()
   accessor chips: ChatChip[] = [];
 
@@ -170,11 +179,13 @@ export class AIChatComposer extends SignalWatcher(
         .reasoningConfig=${this.reasoningConfig}
         .docDisplayConfig=${this.docDisplayConfig}
         .searchMenuConfig=${this.searchMenuConfig}
+        .affineFeatureFlagService=${this.affineFeatureFlagService}
         .aiDraftService=${this.aiDraftService}
         .aiToolsConfigService=${this.aiToolsConfigService}
         .portalContainer=${this.portalContainer}
         .onChatSuccess=${this.onChatSuccess}
         .trackOptions=${this.trackOptions}
+        .isContextProcessing=${this.isContextProcessing}
       ></ai-chat-input>
       <div class="chat-panel-footer">
         <ai-chat-composer-tip
@@ -195,6 +206,25 @@ export class AIChatComposer extends SignalWatcher(
 
   override connectedCallback() {
     super.connectedCallback();
+    this._disposables.add(
+      AIProvider.slots.requestOpenWithChat.subscribe(params => {
+        if (!params) return;
+
+        const { context, host } = params;
+        if (this.host !== host) return;
+
+        if (context) {
+          this.updateContext(context);
+        }
+
+        if (context?.attachments) {
+          // Wait for context value updated next frame
+          setTimeout(() => {
+            this.addSelectedContextChip().catch(console.error);
+          }, 0);
+        }
+      })
+    );
     this.initComposer().catch(console.error);
   }
 
@@ -213,6 +243,10 @@ export class AIChatComposer extends SignalWatcher(
     ) {
       this.isChipsCollapsed = true;
     }
+  }
+
+  private get isContextProcessing() {
+    return this.chips.some(chip => chip.state === 'processing');
   }
 
   private readonly _getContextId = async () => {
@@ -334,12 +368,17 @@ export class AIChatComposer extends SignalWatcher(
     ]);
   };
 
-  private readonly addChip = async (chip: ChatChip) => {
+  private readonly addChip = async (
+    chip: ChatChip,
+    silent: boolean = false
+  ) => {
     this.isChipsCollapsed = false;
     // if already exists
     const index = findChipIndex(this.chips, chip);
     if (index !== -1) {
-      this.notificationService.toast('chip already exists');
+      if (!silent) {
+        this.notificationService.toast('chip already exists');
+      }
       return;
     }
     this.updateChips([...this.chips, chip]);
@@ -351,6 +390,27 @@ export class AIChatComposer extends SignalWatcher(
     const chips = omitChip(this.chips, chip);
     this.updateChips(chips);
     await this.removeFromContext(chip);
+  };
+
+  private readonly addSelectedContextChip = async () => {
+    const { attachments, snapshot, combinedElementsMarkdown } =
+      this.chatContextValue;
+    await this.removeSelectedContextChip();
+    const chip: SelectedContextChip = {
+      uuid: uuidv4(),
+      attachments,
+      snapshot,
+      combinedElementsMarkdown,
+      state: 'processing',
+    };
+    await this.addChip(chip, true);
+  };
+
+  private readonly removeSelectedContextChip = async () => {
+    const selectedContextChip = this.chips.find(c => isSelectedContextChip(c));
+    if (selectedContextChip) {
+      await this.removeChip(selectedContextChip);
+    }
   };
 
   private readonly addToContext = async (chip: ChatChip) => {
@@ -365,6 +425,9 @@ export class AIChatComposer extends SignalWatcher(
     }
     if (isCollectionChip(chip)) {
       return await this.addCollectionToContext(chip);
+    }
+    if (isSelectedContextChip(chip)) {
+      return await this.addSelectedContextChipToContext(chip);
     }
     return null;
   };
@@ -460,6 +523,20 @@ export class AIChatComposer extends SignalWatcher(
     }
   };
 
+  private readonly addSelectedContextChipToContext = async (
+    chip: SelectedContextChip
+  ) => {
+    const { attachments } = chip;
+    const contextId = await this.createContextId();
+    if (!contextId || !AIProvider.context) {
+      throw new Error('Context not found');
+    }
+    await AIProvider.context.addContextBlobs({
+      blobIds: attachments.map(attachment => attachment.sourceId),
+      contextId,
+    });
+  };
+
   private readonly removeFromContext = async (
     chip: ChatChip
   ): Promise<boolean> => {
@@ -490,6 +567,13 @@ export class AIChatComposer extends SignalWatcher(
         return await AIProvider.context.removeContextCollection({
           contextId,
           collectionId: chip.collectionId,
+        });
+      }
+      if (isSelectedContextChip(chip)) {
+        const { attachments } = chip;
+        return await AIProvider.context.removeContextBlobs({
+          contextId,
+          blobIds: attachments.map(attachment => attachment.sourceId),
         });
       }
       return true;
@@ -575,13 +659,17 @@ export class AIChatComposer extends SignalWatcher(
       files = [],
       tags = [],
       collections = [],
+      blobs = [],
     } = result;
     const docs = [
       ...sDocs,
       ...tags.flatMap(tag => tag.docs),
       ...collections.flatMap(collection => collection.docs),
     ];
-    const hashMap = new Map<string, CopilotContextDoc | CopilotContextFile>();
+    const hashMap = new Map<
+      string,
+      CopilotContextDoc | CopilotContextFile | { status: ContextEmbedStatus }
+    >();
     const count: Record<ContextEmbedStatus, number> = {
       finished: 0,
       processing: 0,
@@ -595,11 +683,27 @@ export class AIChatComposer extends SignalWatcher(
       hashMap.set(file.id, file);
       file.status && count[file.status]++;
     });
+    const selectedChip = this.chips.find(c => isSelectedContextChip(c));
+    if (selectedChip) {
+      const status: ContextEmbedStatus = blobs.every(
+        blob => blob.status === 'finished'
+      )
+        ? ContextEmbedStatus.finished
+        : ContextEmbedStatus.processing;
+      hashMap.set(selectedChip.uuid, {
+        status,
+      });
+      count[status]++;
+    }
     const nextChips = this.chips.map(chip => {
       if (isTagChip(chip) || isCollectionChip(chip)) {
         return chip;
       }
-      const id = isDocChip(chip) ? chip.docId : chip.fileId;
+      const id = isDocChip(chip)
+        ? chip.docId
+        : isFileChip(chip)
+          ? chip.fileId
+          : chip.uuid;
       const item = id && hashMap.get(id);
       if (item && item.status) {
         return {

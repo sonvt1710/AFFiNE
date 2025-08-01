@@ -8,6 +8,7 @@ import type {
   CollectionChip,
   DocChip,
   FileChip,
+  SelectedContextChip,
   TagChip,
 } from './type';
 
@@ -62,6 +63,16 @@ export function isCollectionChip(chip: ChatChip): chip is CollectionChip {
   return 'collectionId' in chip;
 }
 
+export function isSelectedContextChip(
+  chip: ChatChip
+): chip is SelectedContextChip {
+  return (
+    'attachments' in chip &&
+    'snapshot' in chip &&
+    'combinedElementsMarkdown' in chip
+  );
+}
+
 export function getChipKey(chip: ChatChip) {
   if (isDocChip(chip)) {
     return chip.docId;
@@ -74,6 +85,9 @@ export function getChipKey(chip: ChatChip) {
   }
   if (isCollectionChip(chip)) {
     return chip.collectionId;
+  }
+  if (isSelectedContextChip(chip)) {
+    return chip.uuid;
   }
   return null;
 }
@@ -92,6 +106,9 @@ export function omitChip(chips: ChatChip[], chip: ChatChip) {
     if (isCollectionChip(chip)) {
       return !isCollectionChip(item) || item.collectionId !== chip.collectionId;
     }
+    if (isSelectedContextChip(chip)) {
+      return !isSelectedContextChip(chip);
+    }
     return true;
   });
 }
@@ -109,6 +126,9 @@ export function findChipIndex(chips: ChatChip[], chip: ChatChip) {
     }
     if (isCollectionChip(chip)) {
       return isCollectionChip(item) && item.collectionId === chip.collectionId;
+    }
+    if (isSelectedContextChip(chip)) {
+      return isSelectedContextChip(item) && item.uuid === chip.uuid;
     }
     return -1;
   });

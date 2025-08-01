@@ -5,6 +5,7 @@ import type {
   ContextMatchedFileChunk,
   ContextWorkspaceEmbeddingStatus,
   CopilotChatHistoryFragment,
+  CopilotContextBlob,
   CopilotContextCategory,
   CopilotContextDoc,
   CopilotContextFile,
@@ -147,6 +148,8 @@ declare global {
       contexts?: {
         docs: AIDocContextOption[];
         files: AIFileContextOption[];
+        selectedSnapshot?: string;
+        selectedMarkdown?: string;
       };
       postfix?: (text: string) => string;
     }
@@ -277,6 +280,7 @@ declare global {
       files: CopilotContextFile[];
       tags: CopilotContextCategory[];
       collections: CopilotContextCategory[];
+      blobs: CopilotContextBlob[];
     };
 
     interface AIContextService {
@@ -356,6 +360,14 @@ declare global {
         op: string,
         updates: string
       ) => Promise<string>;
+      addContextBlobs: (options: {
+        blobIds: string[];
+        contextId: string;
+      }) => Promise<CopilotContextBlob[]>;
+      removeContextBlobs: (options: {
+        blobIds: string[];
+        contextId: string;
+      }) => Promise<boolean>;
     }
 
     // TODO(@Peng): should be refactored to get rid of implement details (like messages, action, role, etc.)
